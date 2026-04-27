@@ -35,6 +35,7 @@ vendor/      OpenWatcom V2, kvikdos, lzsa, xz
 | `03_decode` | 644 B | full roundtrip, byte-compare |
 | `04_hello` | 552 B | resident `hello ` + cold `world\r\n` via far-call |
 | `05_cmdloop` | 666 B | stdin dispatcher, packed cold takes a `__cdecl` arg |
+| `06_apicall` | 688 B | cold calls back into resident via a struct of far function pointers |
 
 ## Further reading
 

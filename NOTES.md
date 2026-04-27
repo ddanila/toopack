@@ -33,7 +33,94 @@ Cold blobs are flat binaries (typically `nasm -f bin`) with these conventions:
 - **Caller far-calls in** (`CS = unpacked segment`). The cold module is responsible for setting `DS = CS` if it needs to access its own data.
 - **Returns via `RETF`.**
 - **Args via `__cdecl`** when needed: stack on entry has `[ret_IP][ret_CS][arg0]...`. See `tests/05_cmdloop/cold.nasm`.
-- **No resident-side helpers yet** — cold uses `INT 21h` directly. A function-pointer table from the resident is the obvious next step.
+- **Multi-entry cold modules:** put a 3-byte `jmp short do_N` table at offset 0 (entry N at offset 3·N). Or use a single entry with a dispatch arg, like `05_cmdloop`.
+- **No mutable state assumptions across allocations.** Cold's segment is freed (or leaked) when the caller is done. Within one allocation, `static` data does persist across calls — cold's segment lives until `dos_free`.
+- **No far constants in cold.** Cold is a flat binary with zero relocations: anything pointing at the resident must come in via an arg or callback.
+
+## Cold ↔ resident calling conventions
+
+The first three sections cover what works today; the API-callback section is the gap that `tests/06_apicall` fills.
+
+### Resident → cold
+
+Standard from `04_hello`/`05_cmdloop`. Caller does a far call into offset 0 with `__cdecl` args:
+
+```c
+typedef void (__far __cdecl *cold_fn)(unsigned int cmd);
+cold = (cold_fn) ovly_load(packed, raw_size);
+cold(0xCAFE);          /* args on stack, far call, RETF returns */
+```
+
+Cold's prologue sets `DS = CS` if it needs its own data, saves any clobbered regs, runs, restores, returns.
+
+### Cold → INT 21h / BIOS
+
+Always works. Interrupts are global, segment-agnostic. Just remember `DS:DX` for `AH=09h` (string print) needs DS pointing where the string lives.
+
+### Cold → resident helpers (the API struct)
+
+See `src/api.{h,asm}` and `tests/06_apicall/`. The pattern:
+
+```c
+/* src/api.h */
+typedef struct {
+    void (__far __cdecl *puts)(const char __far *s);
+    void (__far __cdecl *puthex16)(unsigned int v);
+} toopack_api_t;
+```
+
+Resident initialises a `toopack_api_t` at runtime (see "the relocation trap" below) and passes `&api` as cold's first arg. Cold treats it as a `__far *` and calls helpers through it:
+
+```nasm
+les bx, [bp+6]                   ; ES:BX = api
+push ds
+mov ax, msg
+push ax                          ; far ptr arg: [seg][off]
+call far [es:bx + 0]             ; api->puts(msg)
+add sp, 4                        ; cdecl: caller cleans up
+```
+
+Each helper is `__far __cdecl` (RETF, leading-underscore name decoration), saves and restores DS, and is implemented in `src/api.asm` because Watcom's C inline-asm support has rough edges around DS handling. The `_rapi_puts` helper does `lds dx, [bp+6]` to load the caller's far string, prints, restores DS — a typical pattern.
+
+### The relocation trap
+
+Tiny `.COM` has **no relocation table**. Watcom can't bake the resident's segment into a static `__far` function pointer at compile time, because that segment isn't known until DOS loads the program. If you write the obvious
+
+```c
+static const toopack_api_t api = { rapi_puts, rapi_puthex16 };
+```
+
+`wlink` emits `W1019 segment relocation at …`, the segment field gets stored as zero, and cold's far calls land in low memory. The CPU then `hlt`s on the first interrupt vector it tries to execute as code.
+
+The fix is to assemble the far pointers at runtime. Get CS via inline asm, treat the helpers as opaque address-of references (declared as `extern char` so Watcom doesn't try to compute their full far address), and write the words by hand:
+
+```c
+extern unsigned int get_cs(void);
+#pragma aux get_cs = "mov ax, cs" value [ax];
+
+extern char rapi_puts_addr;
+#pragma aux rapi_puts_addr "_rapi_puts";        /* alias, same symbol */
+
+unsigned int cs = get_cs();
+unsigned int *fp = (unsigned int *)&api;
+fp[0] = (unsigned int)&rapi_puts_addr;   fp[1] = cs;   /* api.puts */
+```
+
+Ugly, but it works and contains the ugliness inside the API-struct setup. Cold sees a normal struct of clean far pointers.
+
+### `__loadds` for helpers that touch resident data
+
+`rapi_puts` doesn't read resident data — it only reads through the caller's far pointer (`lds dx, [bp+6]`), so it's fine. `rapi_puthex16` doesn't either (uses only `INT 21h AH=02h`, which only reads DL).
+
+If a helper *does* need its own static data, it must save DS, set DS = its-own-segment (in tiny .COM, that's `push cs / pop ds`), use the data, then restore DS. Watcom's `__loadds` keyword would automate the prologue/epilogue, but in our hand-rolled `api.asm` it's clearer to do it inline.
+
+### Cost of the indirection
+
+A cold→resident round-trip is roughly:
+- `les bx, [api]` + `call far [es:bx+N]`: ~30–50 cycles on 8088.
+- Helper prologue (push bp, mov bp/sp, push ds, lds): ~25 cycles.
+
+So ~75 cycles per call, vs ~5 cycles for a direct near call. Fine for prompts, status messages, infrequent dispatch; don't put it in a tight loop.
 
 ## Watcom
 
