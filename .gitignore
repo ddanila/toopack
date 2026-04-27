@@ -11,3 +11,4 @@ build/
 .DS_Store
 *.bak
 *.inc
+cold_packed.h
