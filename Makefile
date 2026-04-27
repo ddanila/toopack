@@ -1,18 +1,18 @@
-.PHONY: test clean kvikdos
+include config.mk
 
-KVIKDOS_BIN := vendor/kvikdos/kvikdos
+.PHONY: test clean kvikdos
 
 test: kvikdos
 	@./tests/runner.sh
 
-kvikdos: $(KVIKDOS_BIN)
+kvikdos: $(KVIKDOS)
 
-$(KVIKDOS_BIN):
+$(KVIKDOS):
 	@if [ ! -f vendor/kvikdos/Makefile ]; then \
 	    echo "vendor/kvikdos is empty — did you forget 'git submodule update --init --recursive'?"; \
 	    exit 1; \
 	fi
-	$(MAKE) -C vendor/kvikdos kvikdos
+	$(MAKE) -C vendor/kvikdos $(KVIKDOS_TARGET)
 
 clean:
 	@for d in tests/*/; do \

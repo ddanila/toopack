@@ -10,18 +10,27 @@ REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
 WATCOM  ?= $(REPO_ROOT)/vendor/openwatcom-v2/current-build-2026-04-04
 
-# Pick host platform binaries automatically.
+# Host detection drives both Watcom binary path and kvikdos build target.
+# - macOS: use macOS-arm64 Watcom + default kvikdos (software CPU; KVM is
+#          Linux-only).
+# - Linux: use linux-amd64 Watcom + kvikdos-soft (the software-CPU build).
+#          The default kvikdos target on Linux uses KVM, which GitHub
+#          Actions runners don't expose.
 HOST_OS := $(shell uname -s)
 ifeq ($(HOST_OS),Darwin)
-  WBIN ?= $(WATCOM)/macos-arm64
+  WBIN          ?= $(WATCOM)/macos-arm64
+  KVIKDOS_TARGET ?= kvikdos
+  KVIKDOS_NAME  ?= kvikdos
 else
-  WBIN ?= $(WATCOM)/linux-amd64
+  WBIN          ?= $(WATCOM)/linux-amd64
+  KVIKDOS_TARGET ?= kvikdos-soft
+  KVIKDOS_NAME  ?= kvikdos-soft
 endif
 
 WCC     ?= $(WBIN)/wcc
 WASM    ?= $(WBIN)/wasm
 WLINK   ?= $(WBIN)/wlink
-KVIKDOS ?= $(REPO_ROOT)/vendor/kvikdos/kvikdos
+KVIKDOS ?= $(REPO_ROOT)/vendor/kvikdos/$(KVIKDOS_NAME)
 
 export WATCOM
 export INCLUDE ?= $(WATCOM)/h
