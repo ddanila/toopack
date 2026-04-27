@@ -32,4 +32,26 @@ extern unsigned char dos_getc(void);
     value [ax]                  \
     modify [ax];
 
+/* Allocate a DOS memory block. INT 21h AH=48h: BX = paragraphs.
+ * Returns segment on success, 0 on failure. */
+extern unsigned int dos_alloc(unsigned int paragraphs);
+#pragma aux dos_alloc =         \
+    "mov ah, 48h"               \
+    "int 21h"                   \
+    "jnc skip"                  \
+    "xor ax, ax"                \
+    "skip:"                     \
+    parm [bx]                   \
+    value [ax]                  \
+    modify [ax];
+
+/* Free a previously allocated DOS memory block. ES = segment. */
+extern void dos_free(unsigned int seg);
+#pragma aux dos_free =          \
+    "mov es, bx"                \
+    "mov ah, 49h"               \
+    "int 21h"                   \
+    parm [bx]                   \
+    modify [ax es];
+
 #endif

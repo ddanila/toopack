@@ -6,14 +6,11 @@
 ; INT 21h AH=48h has free conventional memory to hand back. Without this,
 ; the .COM owns all memory and AH=48h returns "no free block".
 
-TOOPACK_PARAGRAPHS  EQU  512    ; 8 KB: program + stack + slack
+TOOPACK_PARAGRAPHS  EQU  256     ; 16 KB: program + stack + slack
 
         .8086
 
-DGROUP  group   _TEXT, _LZSA_TEXT, CONST, CONST2, _DATA, _BSS
-
-_LZSA_TEXT segment word public 'CODE'
-_LZSA_TEXT ends
+DGROUP  group   _TEXT, CONST, CONST2, _DATA, _BSS
 
 _TEXT   segment word public 'CODE'
         assume  cs:DGROUP, ds:DGROUP, ss:DGROUP, es:DGROUP
@@ -24,10 +21,6 @@ _TEXT   segment word public 'CODE'
         extrn   main_:near
 
 _cstart_:
-        ; Move SP within the new block size BEFORE shrinking, so subsequent
-        ; pushes don't trash unallocated memory.
-        mov     sp, (TOOPACK_PARAGRAPHS * 16) - 2
-
         mov     bx, TOOPACK_PARAGRAPHS
         mov     ah, 4Ah         ; resize our memory block
         int     21h
