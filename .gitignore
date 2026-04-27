@@ -10,3 +10,4 @@ build/
 *.tmp
 .DS_Store
 *.bak
+*.inc
