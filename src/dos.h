@@ -1,0 +1,35 @@
+/* Minimal DOS int 21h wrappers. No libc dependency.
+ *
+ * All functions use Watcom inline-asm + #pragma aux for tight code.
+ */
+
+#ifndef TOOPACK_DOS_H
+#define TOOPACK_DOS_H
+
+/* Print a $-terminated string via INT 21h AH=09h.
+ * String must be in DS (near pointer is fine in tiny model). */
+extern void dos_puts(const char *s);
+#pragma aux dos_puts =          \
+    "mov ah, 09h"               \
+    "int 21h"                   \
+    parm [dx]                   \
+    modify [ax];
+
+/* Write one byte via INT 21h AH=02h (DL = char). */
+extern void dos_putc(char c);
+#pragma aux dos_putc =          \
+    "mov ah, 02h"               \
+    "int 21h"                   \
+    parm [dl]                   \
+    modify [ax];
+
+/* Read one byte from stdin via INT 21h AH=08h (no echo). Returns AL. */
+extern unsigned char dos_getc(void);
+#pragma aux dos_getc =          \
+    "mov ah, 08h"               \
+    "int 21h"                   \
+    "xor ah, ah"                \
+    value [ax]                  \
+    modify [ax];
+
+#endif
