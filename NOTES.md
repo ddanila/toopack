@@ -96,6 +96,25 @@ Bonus: upstream NASM source stays untouched — the .inc is regenerated on every
 
 ## Misc
 
+### Make-time `$(if ...)` for optional shell redirections
+
+Bash refuses to parse a redirection operator (`<`, `>`) with no operand even inside an unreached `then` branch, since parsing happens before evaluation:
+
+```sh
+# parse error: bash sees `< ` followed by `2>` and chokes on `2`
+if [ -n "" ]; then cmd < ; else cmd; fi
+```
+
+When a Make recipe wants to optionally pipe stdin, do the branching at *Make time* with `$(if ...)` so the unused redirection isn't even emitted:
+
+```make
+# Usage: $(call run_test,target.com)             — no stdin
+#        $(call run_test,target.com,input.txt)   — with stdin
+$(KVIKDOS) $(if $(2),--tty-in=-2 $(1) < $(2),$(1)) ...
+```
+
+This is the trick used in `config.mk`'s `run_test` macro.
+
 ### Useful debugging incantations
 
 ```sh

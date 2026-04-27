@@ -1,0 +1,41 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install nasm
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends nasm
+
+      - name: Show toolchain
+        run: |
+          echo "WATCOM linux-amd64 binaries:"
+          ls -la vendor/openwatcom-v2/current-build-2026-04-04/linux-amd64/
+          echo "kvikdos source present:"
+          ls vendor/kvikdos/Makefile vendor/kvikdos/kvikdos.c
+          nasm --version
+
+      - name: Build kvikdos and run tests
+        run: make test

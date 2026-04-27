@@ -1,14 +1,30 @@
 # Shared toolchain config. Include from per-test makefiles.
+#
+# OpenWatcom binaries are vendored under vendor/openwatcom-v2 (mirrors the
+# layout used by beta_kappa). kvikdos is a submodule under vendor/kvikdos
+# and gets built on demand by the top-level Makefile.
+#
+# All knobs use `?=` so CI / alternative layouts can override via env.
 
-WATCOM  := $(HOME)/fun/beta_kappa/vendor/openwatcom-v2/current-build-2026-04-04
-WBIN    := $(WATCOM)/macos-arm64
-WCC     := $(WBIN)/wcc
-WASM    := $(WBIN)/wasm
-WLINK   := $(WBIN)/wlink
-KVIKDOS := $(HOME)/fun/beta_kappa/kvikdos
+REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+
+WATCOM  ?= $(REPO_ROOT)/vendor/openwatcom-v2/current-build-2026-04-04
+
+# Pick host platform binaries automatically.
+HOST_OS := $(shell uname -s)
+ifeq ($(HOST_OS),Darwin)
+  WBIN ?= $(WATCOM)/macos-arm64
+else
+  WBIN ?= $(WATCOM)/linux-amd64
+endif
+
+WCC     ?= $(WBIN)/wcc
+WASM    ?= $(WBIN)/wasm
+WLINK   ?= $(WBIN)/wlink
+KVIKDOS ?= $(REPO_ROOT)/vendor/kvikdos/kvikdos
 
 export WATCOM
-export INCLUDE := $(WATCOM)/h
+export INCLUDE ?= $(WATCOM)/h
 
 # 16-bit, 8086, small model, optimize for size, no stdio dependencies
 WCFLAGS := -ms -bt=dos -0 -os -zl -zq -s
