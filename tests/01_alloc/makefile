@@ -3,7 +3,7 @@ include ../../config.mk
 OBJS := start.o main.o
 TARGET := alloc.com
 
-.PHONY: all run clean
+.PHONY: all run clean test
 
 all: $(TARGET)
 
@@ -19,5 +19,8 @@ $(TARGET): $(OBJS)
 run: $(TARGET)
 	$(KVIKDOS) $(TARGET)
 
+test: $(TARGET) expected.txt
+	$(call run_test,$(TARGET))
+
 clean:
-	rm -f *.o $(TARGET)
+	rm -f *.o $(TARGET) out.tmp

@@ -6,7 +6,7 @@ LZSADEC := ../../vendor/lzsa/asm/8088/decompress_small_v2.S
 OBJS := start.o main.o ovly.o unbcj.o unlzsa2.o
 TARGET := decode.com
 
-.PHONY: all run clean
+.PHONY: all run clean test
 
 all: $(TARGET)
 
@@ -34,5 +34,8 @@ $(TARGET): $(OBJS)
 run: $(TARGET)
 	$(KVIKDOS) $(TARGET)
 
+test: $(TARGET) expected.txt
+	$(call run_test,$(TARGET))
+
 clean:
-	rm -f *.o *.inc $(TARGET)
+	rm -f *.o *.inc $(TARGET) out.tmp

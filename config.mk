@@ -19,3 +19,23 @@ WAFLAGS := -q -0 -ms
 define link_com
 $(WLINK) format dos com name $(1) $(addprefix file ,$(2)) option quiet
 endef
+
+# Run a built .COM under kvikdos and diff stdout against expected.txt.
+# Strips CR before diff so expected.txt can stay LF-only.
+# Usage: $(call run_test,target.com)             — no stdin
+#        $(call run_test,target.com,input.txt)   — with stdin
+define run_test
+@name=$$(basename $$(pwd)); \
+$(KVIKDOS) $(if $(2),--tty-in=-2 $(1) < $(2),$(1)) 2>/dev/null | tr -d '\r' > out.tmp; \
+size=$$(wc -c < $(1) | tr -d ' '); \
+if diff -q out.tmp expected.txt >/dev/null 2>&1; then \
+    printf "%-20s PASS  (%4d B)\n" "$$name" "$$size"; \
+    rm -f out.tmp; \
+else \
+    printf "%-20s FAIL  (%4d B)\n" "$$name" "$$size"; \
+    echo "  expected:"; sed 's/^/    /' expected.txt; \
+    echo "  got:";      sed 's/^/    /' out.tmp; \
+    rm -f out.tmp; \
+    exit 1; \
+fi
+endef

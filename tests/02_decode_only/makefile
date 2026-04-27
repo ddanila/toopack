@@ -6,7 +6,7 @@ LZSADEC := ../../vendor/lzsa/asm/8088/decompress_small_v2.S
 OBJS := start.o main.o unlzsa2.o unbcj.o
 TARGET := decode_only.com
 
-.PHONY: all run clean
+.PHONY: all run clean test
 
 all: $(TARGET)
 
@@ -28,5 +28,11 @@ unlzsa2.o: $(SRCDIR)/unlzsa2.asm unlzsa2.inc
 $(TARGET): $(OBJS)
 	$(call link_com,$@,$(OBJS))
 
+run: $(TARGET)
+	$(KVIKDOS) $(TARGET)
+
+test: $(TARGET) expected.txt
+	$(call run_test,$(TARGET))
+
 clean:
-	rm -f *.o *.inc $(TARGET)
+	rm -f *.o *.inc $(TARGET) out.tmp

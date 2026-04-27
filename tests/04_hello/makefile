@@ -5,7 +5,6 @@ LZSADEC := ../../vendor/lzsa/asm/8088/decompress_small_v2.S
 
 OBJS := start.o main.o ovly.o unbcj.o unlzsa2.o
 TARGET := hello.com
-EXPECTED := expected.txt
 
 .PHONY: all run clean test
 
@@ -41,18 +40,8 @@ $(TARGET): $(OBJS)
 run: $(TARGET)
 	$(KVIKDOS) $(TARGET)
 
-test: $(TARGET) $(EXPECTED)
-	@$(KVIKDOS) $(TARGET) 2>/dev/null | tr -d '\r' > out.tmp; \
-	if diff -q out.tmp $(EXPECTED) >/dev/null; then \
-	    echo "04_hello: PASS  ($$(wc -c < $(TARGET) | tr -d ' ') B)"; \
-	    rm -f out.tmp; \
-	else \
-	    echo "04_hello: FAIL"; \
-	    echo "  expected:"; sed 's/^/    /' $(EXPECTED); \
-	    echo "  got:";      sed 's/^/    /' out.tmp; \
-	    rm -f out.tmp; \
-	    exit 1; \
-	fi
+test: $(TARGET) expected.txt
+	$(call run_test,$(TARGET))
 
 clean:
 	rm -f *.o *.inc *.com *.bin cold_packed.h out.tmp
