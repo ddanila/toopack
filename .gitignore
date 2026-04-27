@@ -1,0 +1,10 @@
+build/
+*.obj
+*.err
+*.lst
+*.map
+*.com
+*.exe
+*.bin
+*.tmp
+.DS_Store

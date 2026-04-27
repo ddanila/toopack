@@ -1,0 +1,6 @@
+[submodule "vendor/lzsa"]
+	path = vendor/lzsa
+	url = https://github.com/ddanila/lzsa
+[submodule "vendor/xz"]
+	path = vendor/xz
+	url = https://github.com/ddanila/xz
