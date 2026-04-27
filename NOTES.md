@@ -2,6 +2,39 @@
 
 Hard-won lessons. Read this before fighting the toolchain again.
 
+## Design rationale
+
+### Why LZSA2
+
+Byte-aligned LZ77 with optimal parsing. The 8088 hand-tuned asm decoder is small (~167 B) and fast, and the format gives ~50–60 % compression ratios on real x86 code. Upstream: [emmanuel-marty/lzsa](https://github.com/emmanuel-marty/lzsa). We use the *raw block* variant (`lzsa -f 2 -r`) — no stream framing, max 64 KB per block, which is plenty for cold-path overlays.
+
+### Why a BCJ E8/E9 filter
+
+`CALL rel16` and `JMP rel16` operands are *position-dependent*: identical code at different file offsets emits different bytes, so LZ77 match-finding breaks down on x86 code. Rewriting the operands to absolute targets pre-pack typically buys 10–25 % extra ratio. Inverse pass on decode is a few bytes of asm. Filter source is xz's [`src/liblzma/simple/x86.c`](https://github.com/tukaani-project/xz) (public domain) — but that's the rel32 version, so we wrote a 30-line rel16 equivalent for 8086.
+
+### Why tiny model + DOS-allocated overlay segments
+
+Keeps the resident image inside 64 KB. Cold blobs unpack into separately allocated paragraphs reached via `__far` pointer. Alternative approaches (linker overlays, .EXE multi-segment) are more complex without buying anything for short-lived overlay use.
+
+### When overlays actually save bytes
+
+For tiny cold modules (tens of bytes), the LZSA2 raw-block overhead is more than the savings. The two demos (`04_hello`, `05_cmdloop`) cost more bytes than they save — they exist to validate the plumbing. Real break-even:
+
+- Resident decoder + dispatcher overhead: **~480 B fixed** (LZSA2 asm 167 B + BCJ inverse ~30 B + `ovly_load` ~50 B + DOS alloc machinery + libc-free CRT + boilerplate).
+- LZSA2 typically reaches 50–60 % ratio on real x86 code with the BCJ filter applied.
+
+→ Cold modules need to be roughly **1 KB+ raw** before overlays save net resident bytes. For a single 2 KB cold path you'd save roughly 1 KB of resident segment at the cost of an off-segment DOS allocation. Multiple cold paths sharing the resident decoder amortize the overhead further.
+
+## Cold-module ABI
+
+Cold blobs are flat binaries (typically `nasm -f bin`) with these conventions:
+
+- **Entry at offset 0** of the unpacked blob.
+- **Caller far-calls in** (`CS = unpacked segment`). The cold module is responsible for setting `DS = CS` if it needs to access its own data.
+- **Returns via `RETF`.**
+- **Args via `__cdecl`** when needed: stack on entry has `[ret_IP][ret_CS][arg0]...`. See `tests/05_cmdloop/cold.nasm`.
+- **No resident-side helpers yet** — cold uses `INT 21h` directly. A function-pointer table from the resident is the obvious next step.
+
 ## Watcom
 
 ### Outputs `.o`, not `.obj` on macOS
