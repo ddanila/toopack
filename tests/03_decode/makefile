@@ -1,8 +1,7 @@
 include ../../config.mk
 
-NASM    := nasm
 SRCDIR  := ../../src
-LZSAINC := ../../vendor/lzsa/asm/8088
+LZSADEC := ../../vendor/lzsa/asm/8088/decompress_small_v2.S
 
 OBJS := start.o main.o ovly.o unbcj.o unlzsa2.o
 TARGET := decode.com
@@ -23,8 +22,11 @@ ovly.o: $(SRCDIR)/ovly.c $(SRCDIR)/ovly.h $(SRCDIR)/unlzsa2.h $(SRCDIR)/unbcj.h 
 unbcj.o: $(SRCDIR)/unbcj.c $(SRCDIR)/unbcj.h
 	$(WCC) $(WCFLAGS) -fo=$@ $(SRCDIR)/unbcj.c
 
-unlzsa2.o: $(SRCDIR)/unlzsa2.S $(LZSAINC)/decompress_small_v2.S
-	$(NASM) -f obj -I $(LZSAINC)/ $(SRCDIR)/unlzsa2.S -o $@
+unlzsa2.inc: $(LZSADEC) ../../tools/gen_decoder_inc.sh
+	../../tools/gen_decoder_inc.sh $(LZSADEC) $@
+
+unlzsa2.o: $(SRCDIR)/unlzsa2.asm unlzsa2.inc
+	$(WASM) $(WAFLAGS) -i=. -fo=$@ $(SRCDIR)/unlzsa2.asm
 
 $(TARGET): $(OBJS)
 	$(call link_com,$@,$(OBJS))
@@ -33,4 +35,4 @@ run: $(TARGET)
 	$(KVIKDOS) $(TARGET)
 
 clean:
-	rm -f *.o $(TARGET)
+	rm -f *.o *.inc $(TARGET)

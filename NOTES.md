@@ -20,7 +20,9 @@ Stock Watcom tiny-COM startup calls `INT 21h AH=4Ah` to shrink the program block
 - `org 100h` at the top of `_TEXT`. **Without `org 100h`, all `OFFSET` fixups land 0x100 bytes too low** — strings print PSP garbage. Discovered via `mov dx, 0x004` instead of `0x114`.
 - `wlink option offset=100h` is **rejected** for COM format; the org has to come from the assembler, not the linker.
 
-### Watcom `pragma aux` to call NASM/external assembly
+### Watcom `pragma aux` — calling external assembly
+
+Two-step declaration: extern with `"*"` to suppress name decoration, then the call wrapper.
 
 ```c
 extern void lzsa2_decompress(void);
@@ -29,13 +31,25 @@ extern void lzsa2_decompress(void);
 
 extern unsigned int unlzsa2(...);
 #pragma aux unlzsa2 =                   \
+    "push bp"                           \
     "call lzsa2_decompress"             \
+    "pop bp"                            \
     parm [si] [es di]                   \
     value [ax]                          \
-    modify [si di ax bx cx dx bp es];
+    modify [si di ax bx cx dx es];
 ```
 
-The `"*"` aux name on the extern suppresses Watcom's name decoration. Without it, Watcom appends `_` and the link fails.
+### **CRITICAL: Watcom does NOT honour BP in the `modify` clause**
+
+If `[bp]` appears in `modify`, Watcom assumes BP is clobbered — but it does *not* save/restore BP for you. The caller's stack frame is destroyed. All subsequent `[bp-X]` accesses (including the supposed return value of the function) read garbage from random stack offsets.
+
+The LZSA decoder zeroes BP and uses it as a 32-bit accumulator. Without `push bp / pop bp` around the `call`, after the decoder returns:
+
+- `seg` reads back as `0x0000` instead of the real allocation result.
+- Reads through `__far *` based on `seg` go to segment 0 (low memory).
+- The decoded output looks correct in the alloc'd segment — but you can't see it through the (now-bogus) far pointer.
+
+The fix: wrap the `call` in `"push bp" / "pop bp"` and remove BP from `modify`. Always do this when calling assembly that uses BP for non-frame purposes.
 
 ## kvikdos
 
@@ -43,9 +57,11 @@ The `"*"` aux name on the extern suppresses Watcom's name decoration. Without it
 
 kvikdos enforces stricter MCB invariants than real DOS. Key one for us: **two adjacent free MCBs are illegal**, even though real DOS / DOSBox / FreeDOS tolerate it. After our shrink (AH=4Ah) creates a free trailing block, kvikdos can return reason `10` from `is_mcb_bad`.
 
-Workaround: pass `--azzy` to kvikdos, which sets `g_azzy=1` and skips most MCB sanity checks.
+In practice: with the BP fix above, the spurious `INT 21h AH=4Ah` calls vanish and kvikdos accepts our memory pattern *without* `--azzy`. We only saw the MCB error because corrupted BP led to corrupted execution which led to phantom DOS calls.
 
-For real-DOS or QEMU testing, this is a non-issue.
+`--azzy` is still useful as a diagnostic — if a test passes with `--azzy` and fails without, you've got more BP-corruption-style bugs hiding.
+
+For real-DOS or QEMU testing, `--azzy` is moot.
 
 ### Memory shrink for AH=48h to work
 
@@ -60,34 +76,23 @@ For real-DOS or QEMU testing, this is a non-issue.
 
 The canonical reference test is `~/fun/kvikdos/malloct.com` (built from `malloct.nasm`) — known-good shrink + alloc + free pattern.
 
-## LZSA + Watcom integration: open issue
+## LZSA + Watcom integration
 
-**Status: not yet working in `tests/03_decode`.**
+### Build flow
 
-`vendor/lzsa/asm/8088/decompress_small_v2.S` is **NASM syntax** (the `LZSA2FTA.ASM` is TASM IDEAL — Watcom's `wasm` does not accept it). NASM with `-f obj` produces a Watcom-compatible OMF object.
+`vendor/lzsa/asm/8088/decompress_small_v2.S` is **NASM syntax** (the `LZSA2FTA.ASM` is TASM IDEAL — Watcom's `wasm` does not accept it). Linking the NASM-emitted `.obj` directly *fails*: when wlink merges Watcom's `_TEXT` (with `org 100h`) and NASM's segment (no org), the call-site fixup for `lzsa2_decompress` lands 0x100 bytes too low.
 
-The bug: when wlink merges Watcom's `_TEXT` (with `org 100h`) and NASM's segment (no org), the `OFFSET lzsa2_decompress` fixup ends up **0x100 bytes too low**:
+**Workaround:** round-trip through a flat binary. `tools/gen_decoder_inc.sh` runs `nasm -f bin` to produce raw decoder bytes, then emits a wasm-compatible `db` listing. `src/unlzsa2.asm` opens `_TEXT` and includes the listing — wasm's offset bookkeeping then matches Watcom's `org 100h` on the same segment.
 
-- Call site: `e8 1c 01` from `0x199` → target `0x2B8`.
-- Actual decoder location: `0x3B8` (in CS-relative display).
-- Calling 0x2B8 lands in zero-padding; CPU executes `add [bx+si],al` repeatedly, eventually producing junk state, and (somehow) ends up issuing `INT 21h AH=4Ah` on the just-allocated overlay segment, corrupting the MCB chain.
+```
+decompress_small_v2.S  →  nasm -f bin  →  unlzsa2.inc (db ...)
+                                                ↓
+                                        src/unlzsa2.asm  →  wasm  →  unlzsa2.o
+                                                                          ↓
+                                                                       wlink
+```
 
-The runtime symptom under kvikdos `--azzy` is the loop you see in the alloc-fail trace: alloc → realloc-our-overlay → alloc-again → `alloc fail`.
-
-### Things we tried, all failed
-
-- Putting NASM-emitted code in a separate segment `_LZSA_TEXT` grouped into DGROUP — wlink still treats NASM offsets as 0-based, so the 0x100 mismatch persists.
-- `times 0x100 db 0` padding at the start of NASM's segment — shifts both the symbol *and* the bytes; net offset still off.
-- `wlink ORDER ... OFFSET 100h SEGMENT _LZSA_TEXT` — wlink rejects the directive in `format dos com` mode.
-
-### Routes forward (decision needed)
-
-1. **Convert `decompress_small_v2.S` from NASM to wasm syntax.** ~145 lines, mostly mechanical (`segment .text` → `_TEXT segment`, NASM `.local` labels → unique names, etc.). Most reliable; keeps everything in one assembler. Trade: maintenance fork from upstream.
-2. **Generate a wasm-compatible OBJ that contains the decoder bytes inline.** Pre-assemble with `nasm -f bin`, then auto-generate a `db` listing in a wasm source file. Build glue, but keeps upstream pristine.
-3. **Switch from kvikdos to QEMU + FreeDOS** for testing — doesn't fix the build offset issue (which is wlink/NASM, not kvikdos), but rules out kvikdos quirks contaminating diagnosis.
-4. **Use the Watcom-syntax `LZSA2FTA.ASM` after porting from TASM IDEAL to wasm-MASM.** Similar effort to (1) but starting from a different source.
-
-(1) is probably the cleanest. (2) is the lowest-risk to upstream. (3) addresses kvikdos but not the core bug.
+Bonus: upstream NASM source stays untouched — the .inc is regenerated on every build.
 
 ## Misc
 

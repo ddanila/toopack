@@ -54,4 +54,17 @@ extern void dos_free(unsigned int seg);
     parm [bx]                   \
     modify [ax es];
 
+/* Print one byte as 2 hex digits via dos_putc. */
+static void dos_puthex8(unsigned char v) {
+    static const char H[] = "0123456789ABCDEF";
+    dos_putc(H[(v >> 4) & 0x0F]);
+    dos_putc(H[v & 0x0F]);
+}
+
+/* Print 16-bit value as 4 hex digits. */
+static void dos_puthex16(unsigned int v) {
+    dos_puthex8((unsigned char)(v >> 8));
+    dos_puthex8((unsigned char)(v & 0xFF));
+}
+
 #endif

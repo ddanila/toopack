@@ -20,10 +20,15 @@ extern void lzsa2_decompress(void);
  * `call lzsa2_decompress` with parameters loaded into the right regs. */
 extern unsigned int unlzsa2(const unsigned char *src,
                             unsigned char __far *dst);
+/* The decoder uses BP internally (`xor bp, bp` then accumulates a 32-bit
+ * match offset into it) and does not restore it. We save/restore BP here
+ * so callers can rely on stack frames surviving the call. */
 #pragma aux unlzsa2 =                   \
+    "push bp"                           \
     "call lzsa2_decompress"             \
+    "pop bp"                            \
     parm [si] [es di]                   \
     value [ax]                          \
-    modify [si di ax bx cx dx bp es];
+    modify [si di ax bx cx dx es];
 
 #endif
