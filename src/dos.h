@@ -23,8 +23,9 @@ extern void dos_putc(char c);
     parm [dl]                   \
     modify [ax];
 
-/* Read one byte from stdin via INT 21h AH=08h (no echo). Returns AL. */
-extern unsigned char dos_getc(void);
+/* Read one byte from stdin via INT 21h AH=08h (no echo). Returns the
+ * byte zero-extended into AX. */
+extern unsigned int dos_getc(void);
 #pragma aux dos_getc =          \
     "mov ah, 08h"               \
     "int 21h"                   \
